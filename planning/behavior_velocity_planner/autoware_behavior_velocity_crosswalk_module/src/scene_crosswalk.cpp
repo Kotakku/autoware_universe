@@ -261,8 +261,8 @@ bool CrosswalkModule::modifyPathVelocity(PathWithLaneId * path)
     last_path_point_on_crosswalk, default_stop_pose);
 
   // Get nearest stop factor
-  const auto nearest_stop_factor =
-    getNearestStopPoseWithId(*path, stop_factor_for_crosswalk_users, stop_factor_for_stuck_vehicles);
+  const auto nearest_stop_factor = getNearestStopPoseWithId(
+    *path, stop_factor_for_crosswalk_users, stop_factor_for_stuck_vehicles);
   recordTime(3);
 
   // Set safe or unsafe
@@ -1421,7 +1421,7 @@ void CrosswalkModule::planStop(
     auto & object = object_info_manager_.objects.at(object_id);
     if (object.collision_point) {
       safety_factor.ttc_begin = object.collision_point->time_to_collision;
-      safety_factor.ttc_end = 0.0; 
+      safety_factor.ttc_end = 0.0;
     } else {
       safety_factor.ttc_begin = 0.0;
       safety_factor.ttc_end = 0.0;
