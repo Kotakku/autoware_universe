@@ -355,7 +355,8 @@ void MinimumRuleBasedPlannerNode::on_timer()
   const double ego_arc_length = autoware::motion_utils::calcSignedArcLength(
     trajectory.points, 0UL, input_data.odometry_ptr->pose.pose.position);
   const auto stop_result = map_based_stop_planner_->plan(
-    trajectory, ego_arc_length, input_data.odometry_ptr->twist.twist.linear.x,
+    trajectory, ego_arc_length, input_data.odometry_ptr->pose.pose,
+    input_data.odometry_ptr->twist.twist.linear.x,
     input_data.acceleration_ptr->accel.accel.linear.x, make_map_based_stop_params());
   pub_stop_lines_marker_->publish(stop_result.stop_line_markers);
 
@@ -409,7 +410,9 @@ StopSelectionParams MinimumRuleBasedPlannerNode::make_map_based_stop_params() co
   params.stop_distance_from_crosswalk = params_.map_based_stop.stop_distance_from_crosswalk;
   params.stop_distance_from_private_area = params_.map_based_stop.stop_distance_from_private_area;
   params.stop_distance_from_intersection = params_.map_based_stop.stop_distance_from_intersection;
+  params.stop_distance_from_road_shoulder = params_.map_based_stop.stop_distance_from_road_shoulder;
   params.base_link_to_front = vehicle_info_.max_longitudinal_offset_m;
+  params.vehicle_info = vehicle_info_;
   params.stop_point_diff_threshold = params_.map_based_stop.stop_point_diff_threshold;
   return params;
 }
