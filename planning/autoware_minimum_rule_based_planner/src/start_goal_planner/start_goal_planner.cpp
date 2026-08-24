@@ -178,12 +178,13 @@ std::pair<double, double> cal_curvature(
   double curvature_integral = 0.0;
   for (size_t i = 0; i < ss.size() - 1; ++i) {
     const double ds = ss[i + 1] - ss[i];
-    const double curvature =
+    // The integral accumulates the squared curvature (bending energy), while the maximum is
+    // compared against the steering limit and therefore has to stay in curvature units.
+    const double curvature_squared =
       (curvature_vec[i] * curvature_vec[i] + curvature_vec[i + 1] * curvature_vec[i + 1]) * 0.5;
-    if (max_curvature < curvature) {
-      max_curvature = curvature;
-    }
-    curvature_integral += curvature * ds;
+    max_curvature =
+      std::max({max_curvature, std::abs(curvature_vec[i]), std::abs(curvature_vec[i + 1])});
+    curvature_integral += curvature_squared * ds;
   }
   return {curvature_integral, max_curvature};
 }
@@ -308,7 +309,7 @@ void StartGoalPlanner::judge_start_planner_act(
   constexpr double start_planner_end_th_m = 1;
 
   const bool reset_condition_1 = goal_planner_act_;
-  const bool reset_condition_2 = lateral_offset < start_planner_end_th_m;
+  const bool reset_condition_2 = std::abs(lateral_offset) < start_planner_end_th_m;
   const bool set_condition_1 = [&]() {
     lanelet::ConstLanelets candidates = route_data_.start_lanelets;
     for (const auto & ll : route_data_.start_lanelets) {
@@ -582,8 +583,11 @@ std::optional<double> StartGoalPlanner::evaluate_trajectory(
           time_keeper_)
       : 0.0;
 
+  // Normalize by the largest integral the trajectory could have at the steering limit so the
+  // term is dimensionless, matching the length term.
   const double score =
-    curvature_integral / feasible_curvature * feasible_curvature * params_.eval_weight_curvature +
+    curvature_integral / (feasible_curvature * feasible_curvature * arc_length) *
+      params_.eval_weight_curvature +
     arc_length / params_.goal_planner.search_radius_range * params_.eval_weight_length +
     trajectory_diff * params_.eval_weight_diff;
   return score;
