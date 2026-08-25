@@ -52,7 +52,8 @@ void interpolate_lane_ids(
 }
 
 std::vector<PathPointWithLaneId> generate_trajectory_from_points(
-  std::vector<geometry_msgs::msg::Point> points, PathPointWithLaneId goal)
+  const std::vector<geometry_msgs::msg::Point> & points, const PathPointWithLaneId & goal,
+  const double & velocity)
 {
   std::vector<PathPointWithLaneId> trajectory;
   if (points.size() < 2) {
@@ -65,6 +66,7 @@ std::vector<PathPointWithLaneId> generate_trajectory_from_points(
     point.point.pose.position = curr;
     point.point.pose.orientation =
       autoware_utils::create_quaternion_from_yaw(std::atan2(curr.y - prev.y, curr.x - prev.x));
+    point.point.longitudinal_velocity_mps = velocity;
     trajectory.push_back(point);
   }
   return trajectory;
@@ -289,6 +291,10 @@ std::optional<PathPointTrajectory> StartGoalPlanner::plan(
     return std::nullopt;  // StartGoalPlanner is not applied. normal termination
   }
 
+  if (is_prev_traj_valid(ego_pose)) {
+    return *generated_trajectory_;
+  }
+
   const auto goal_pose_candidates = get_goal_pose(trajectory, ego_pose);
   const auto start_pose_candidates = get_start_pose(trajectory, ego_pose);
   if (!start_pose_candidates || !goal_pose_candidates) {
@@ -466,6 +472,19 @@ std::vector<lanelet::BasicPolygon2d> StartGoalPlanner::get_available_area(
   return polygons;
 }
 
+bool StartGoalPlanner::is_prev_traj_valid(const geometry_msgs::msg::Pose & ego_pose)
+{
+  if (!generated_trajectory_.has_value()) {
+    return false;
+  }
+  const auto lateral_offset =
+    autoware::motion_utils::calcLateralOffset(generated_trajectory_->restore(), ego_pose.position);
+  if (lateral_offset < params_.use_prev_traj_th) {
+    return true;
+  }
+  return false;
+}
+
 std::optional<std::vector<PathPointWithLaneId>> StartGoalPlanner::get_start_pose(
   const PathPointTrajectory & trajectory, const geometry_msgs::msg::Pose & ego_pose)
 {
@@ -537,7 +556,8 @@ std::optional<std::vector<PathPointTrajectory>> StartGoalPlanner::generate_pull_
   constexpr double min_point_distance = autoware::experimental::trajectory::k_epsilon_distance;
   for (const auto & clothoid_points : *clothoid_paths) {
     std::vector<PathPointWithLaneId> trajectory = {start_point};
-    for (const auto & point : generate_trajectory_from_points(clothoid_points, goal_point)) {
+    for (const auto & point :
+         generate_trajectory_from_points(clothoid_points, goal_point, params_.reference_velocity)) {
       if (
         autoware_utils::calc_distance2d(trajectory.back().point.pose, point.point.pose) <
         min_point_distance) {
@@ -571,10 +591,10 @@ std::optional<double> StartGoalPlanner::evaluate_trajectory(
   autoware_utils_debug::ScopedTimeTrack st(__func__, *time_keeper_);
   const double feasible_curvature =
     std::tan(vehicle_info_.max_steer_angle_rad) / vehicle_info_.wheel_base_m;
-  const auto base_footprint = vehicle_info_.createFootprint();
+  const auto base_footprint = vehicle_info_.createFootprint(/*margin=*/0.2);
 
   constexpr size_t num_sample_trajectory_diff = 5;
-  constexpr size_t num_sample_footprint_check = 5;
+  constexpr size_t num_sample_footprint_check = 20;
   const auto traj_points_prev =
     generated_trajectory_.has_value()
       ? downsample_trajectory_points(*generated_trajectory_, num_sample_trajectory_diff)
@@ -587,7 +607,7 @@ std::optional<double> StartGoalPlanner::evaluate_trajectory(
   }
 
   const auto [curvature_integral, max_curvature] =
-    cal_curvature(candidate, time_keeper_, /*smoothing_window_size=*/7);
+    cal_curvature(candidate, time_keeper_, /*smoothing_window_size=*/9);
   if (max_curvature > feasible_curvature) {
     return std::nullopt;
   }
